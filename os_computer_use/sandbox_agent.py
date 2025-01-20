@@ -38,6 +38,19 @@ class SandboxAgent:
         if save_logs:
             logger.log_file = f"{output_dir}/log.html"
 
+        # Install Chrome if not already installed
+        try:
+            print("Installing Chrome...")
+            # Add Google Chrome repository
+            self.sandbox.commands.run("wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -")
+            self.sandbox.commands.run("echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' | sudo tee /etc/apt/sources.list.d/google-chrome.list")
+            # Update and install Chrome
+            self.sandbox.commands.run("sudo apt-get update")
+            self.sandbox.commands.run("sudo apt-get install -y google-chrome-stable")
+            print("Chrome installed successfully")
+        except Exception as e:
+            print(f"Failed to install Chrome: {e}")
+
         print("The agent will use the following actions:")
         for action, details in tools.items():
             param_str = ", ".join(details.get("params").keys())
@@ -108,7 +121,13 @@ class SandboxAgent:
         params={"name": "Key or combination (e.g. 'Return', 'Ctl-C')"},
     )
     def send_key(self, name):
-        self.sandbox.commands.run(f"xdotool key -- {name}")
+        if "+" in name:
+            # Handle key combinations like Ctrl+C
+            keys = name.split("+")
+            self.sandbox.hotkey(*keys)
+        else:
+            # Handle single keys
+            self.sandbox.write(name)
         return "The key has been pressed."
 
     @tool(
