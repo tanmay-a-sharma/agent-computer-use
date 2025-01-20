@@ -135,17 +135,10 @@ class SandboxAgent:
         params={"text": "Text to type"},
     )
     def type_text(self, text):
-        def chunks(text, n):
-            for i in range(0, len(text), n):
-                yield text[i : i + n]
-
-        results = []
-        for chunk in chunks(text, TYPING_GROUP_SIZE):
-            cmd = f"xdotool type --delay {TYPING_DELAY_MS} -- {shlex.quote(chunk)}"
-            results.append(self.sandbox.commands.run(cmd))
+        self.sandbox.write(text)
         return "The text has been typed."
 
-    def click_element(self, query, click_command, action_name="click"):
+    def click_element(self, query, click_func, action_name="click"):
         """Base method for all click operations"""
         self.take_screenshot()
         position = grounding_model.call(query, self.latest_screenshot)
@@ -154,8 +147,8 @@ class SandboxAgent:
         logger.log(f"{action_name} {filepath})", "gray")
 
         x, y = position
-        self.sandbox.commands.run(f"xdotool mousemove --sync {x} {y}")
-        self.sandbox.commands.run(click_command)
+        self.sandbox.mouse_move(x, y)
+        click_func()
         return f"The mouse has {action_name}ed."
 
     @tool(
@@ -163,21 +156,76 @@ class SandboxAgent:
         params={"query": "Item or UI element on the screen to click"},
     )
     def click(self, query):
-        return self.click_element(query, "xdotool click 1")
+        return self.click_element(query, self.sandbox.left_click)
 
     @tool(
         description="Double click on a specified UI element.",
         params={"query": "Item or UI element on the screen to double click"},
     )
     def double_click(self, query):
-        return self.click_element(query, "xdotool click --repeat 2 1", "double click")
+        return self.click_element(query, self.sandbox.double_click, "double click")
 
     @tool(
         description="Right click on a specified UI element.",
         params={"query": "Item or UI element on the screen to right click"},
     )
     def right_click(self, query):
-        return self.click_element(query, "xdotool click 3", "right click")
+        return self.click_element(query, self.sandbox.right_click, "right click")
+
+    @tool(
+        description="Open an application.",
+        params={"app_name": "Name of the application to open (e.g., 'Google Chrome', 'Firefox', 'Safari')"},
+    )
+    def open_app(self, app_name):
+        # Convert common app names to their Linux executable names
+        app_map = {
+            "google chrome": "google-chrome",
+            "chrome": "google-chrome",
+            "firefox": "firefox",
+            "terminal": "x-terminal-emulator",
+            "nautilus": "nautilus",
+        }
+        
+        # Get the actual app name from the map, or use the input directly
+        actual_app = app_map.get(app_name.lower(), app_name.lower())
+        
+        # Try to start the application
+        try:
+            if actual_app == "google-chrome":
+                # Run Chrome in headless mode with remote debugging enabled
+                result = self.sandbox.commands.run(
+                    "google-chrome --headless --disable-gpu --remote-debugging-port=9222 --no-sandbox about:blank &",
+                    background=True
+                )
+                return f"{app_name} has been opened in headless mode."
+            else:
+                # For other apps, try running directly
+                result = self.sandbox.commands.run(actual_app, timeout=2)
+                return f"{app_name} has been opened."
+        except Exception as e:
+            return f"Could not open {app_name}. Error: {str(e)}"
+
+    @tool(
+        description="Navigate to a URL in Chrome.",
+        params={"url": "URL to navigate to (e.g., 'https://google.com')"},
+    )
+    def navigate_to_url(self, url):
+        # Add https:// if not present
+        if not url.startswith('http://') and not url.startswith('https://'):
+            url = 'https://' + url
+
+        try:
+            # Kill any existing Chrome instances
+            self.sandbox.commands.run("pkill chrome", timeout=2)
+            
+            # Start Chrome with the URL
+            result = self.sandbox.commands.run(
+                f"google-chrome --headless --disable-gpu --remote-debugging-port=9222 --no-sandbox {url} &",
+                background=True
+            )
+            return f"Navigated to {url}"
+        except Exception as e:
+            return f"Failed to navigate to {url}. Error: {str(e)}"
 
     def append_screenshot(self):
         convert_to_content = lambda message: (
