@@ -97,6 +97,15 @@ def create_tools(sandbox_agent: SandboxAgent) -> list[Tool]:
             args_schema=NavigateToUrlInput
         )
     )
+
+    # Get page content tool
+    tools.append(
+        Tool(
+            name="get_page_content",
+            description="Get a summary of the current page content",
+            func=lambda _: sandbox_agent.get_page_content()
+        )
+    )
     
     return tools
 

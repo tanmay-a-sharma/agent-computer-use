@@ -39,17 +39,17 @@ class SandboxAgent:
             logger.log_file = f"{output_dir}/log.html"
 
         # Install Chrome if not already installed
+        logger.log("Installing Chrome...", "gray")
         try:
-            print("Installing Chrome...")
-            # Add Google Chrome repository
-            self.sandbox.commands.run("wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -")
-            self.sandbox.commands.run("echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' | sudo tee /etc/apt/sources.list.d/google-chrome.list")
-            # Update and install Chrome
-            self.sandbox.commands.run("sudo apt-get update")
-            self.sandbox.commands.run("sudo apt-get install -y google-chrome-stable")
-            print("Chrome installed successfully")
+            # Check if Chrome is installed
+            chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            if not os.path.exists(chrome_path):
+                # For macOS, we'll use Homebrew to install Chrome
+                self.sandbox.commands.run("brew install --cask google-chrome")
+            logger.log("Chrome installed successfully", "green")
         except Exception as e:
-            print(f"Failed to install Chrome: {e}")
+            logger.log(f"Failed to install Chrome: {str(e)}", "red")
+            raise e
 
         print("The agent will use the following actions:")
         for action, details in tools.items():
@@ -140,16 +140,25 @@ class SandboxAgent:
 
     def click_element(self, query, click_func, action_name="click"):
         """Base method for all click operations"""
-        self.take_screenshot()
-        position = grounding_model.call(query, self.latest_screenshot)
-        dot_image = draw_big_dot(Image.open(self.latest_screenshot), position)
-        filepath = self.save_image(dot_image, "location")
-        logger.log(f"{action_name} {filepath})", "gray")
+        try:
+            self.take_screenshot()
+            position = grounding_model.call(query, self.latest_screenshot)
+            dot_image = draw_big_dot(Image.open(self.latest_screenshot), position)
+            filepath = self.save_image(dot_image, "location")
+            logger.log(f"{action_name} {filepath})", "gray")
 
-        x, y = position
-        self.sandbox.mouse_move(x, y)
-        click_func()
-        return f"The mouse has {action_name}ed."
+            x, y = position
+            self.sandbox.move_mouse(x, y)
+            click_func()
+            
+            # Wait for page load
+            import time
+            time.sleep(3)  # Wait 3 seconds for page to load
+            
+            return f"The mouse has {action_name}ed."
+        except Exception as e:
+            logger.log(f"Error during {action_name}: {str(e)}", "red")
+            return f"Failed to {action_name}. Error: {str(e)}"
 
     @tool(
         description="Click on a specified UI element.",
@@ -226,6 +235,33 @@ class SandboxAgent:
             return f"Navigated to {url}"
         except Exception as e:
             return f"Failed to navigate to {url}. Error: {str(e)}"
+
+    @tool(
+        description="Get the content of the current page.",
+        params={},
+    )
+    def get_page_content(self):
+        try:
+            # Take a screenshot and analyze it with the vision model
+            self.take_screenshot()
+            response = vision_model.call(
+                [
+                    Message(
+                        map(
+                            lambda message: Base64Image(message) if isinstance(message, bytes) else Text(message),
+                            [
+                                self.take_screenshot(),
+                                "Please analyze this screenshot and provide a detailed summary of the main content. Focus on any text, headings, and key information visible on the page. Ignore navigation elements, ads, and other UI components.",
+                            ],
+                        ),
+                        role="user",
+                    ),
+                ]
+            )
+            return response
+        except Exception as e:
+            logger.log(f"Error getting page content: {str(e)}", "red")
+            return f"Failed to get page content. Error: {str(e)}"
 
     def append_screenshot(self):
         convert_to_content = lambda message: (

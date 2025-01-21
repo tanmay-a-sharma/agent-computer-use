@@ -7,7 +7,19 @@ logger = Logger()
 
 
 def main():
+    """
+    Example code for using the LangGraph agent with OpenAI LLMs.
 
+    This code creates an agent with the default tools and runs a series of example tasks.
+
+    Tasks:
+    1. Open Google Chrome
+    2. In Chrome, navigate to google.com
+    3. Type 'Java programming' in the Google search bar
+    4. Press enter to search
+    5. Click on the first search result
+    6. Give me a summary of the contents
+    """
     load_dotenv()
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
@@ -22,8 +34,10 @@ def main():
     tasks = [
         "Open Google Chrome",
         "In Chrome, navigate to google.com",
-        "Type 'Python programming' in the Google search bar",
+        "Type 'Java programming' in the Google search bar",
         "Press enter to search",
+        "Click on the first search result",
+        "Give me a summary of the contents",
     ]
 
     # Run each task
